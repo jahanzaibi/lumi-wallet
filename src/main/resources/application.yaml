@@ -1,0 +1,101 @@
+spring:
+  application:
+    name: lumi-wallet
+
+  datasource:
+    # Embedded Derby. The database is created on first boot under ./data.
+    url: jdbc:derby:./data/lumiwallet;create=true
+    driver-class-name: org.apache.derby.jdbc.EmbeddedDriver
+    username: app
+    password: app
+    hikari:
+      # Embedded Derby serialises writes anyway; a small pool keeps lock contention observable
+      # rather than hidden behind hundreds of idle connections.
+      maximum-pool-size: 20
+      pool-name: wallet-pool
+
+  jpa:
+    # Flyway owns the schema. Hibernate only validates that the mapping matches it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: com.lumi.wallet.support.DerbyRowLockingDialect
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+          lob:
+            # Derby's embedded driver does not implement Connection.createNClob/createClob.
+            # Without this, Hibernate probes for it at startup, Derby raises 0A000, and Hikari
+            # discards the connection it probed on.
+            non_contextual_creation: true
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Derby derives the schema from the connection user; "app" -> APP.
+    default-schema: APP
+    baseline-on-migrate: false
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 10
+        default-requeue-rejected: false
+    template:
+      mandatory: true
+
+  jackson:
+    # Jackson 3 (shipped with Boot 4) already writes dates as ISO-8601 strings by default, which
+    # is what the API contract in HELP.md uses ("2026-08-17T12:00:00Z").
+    default-property-inclusion: non_null
+    deserialization:
+      # An event payload is a loose map, so a JSON number in it has no declared target type and
+      # would otherwise arrive as a double. Amounts must never pass through a double in a wallet:
+      # this keeps an order amount read from an event exactly the value that was published.
+      use-big-decimal-for-floats: true
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+wallet:
+  # Reward asset code. Monetary assets are SAR/USD/EUR; POINT is the reward asset and the two
+  # are never mixed in one balance (HELP.md section 2).
+  reward-asset-code: POINT
+  # Reservation TTL (HELP.md section 13).
+  reservation-ttl: PT5M
+  # A quote is informational and must not be trusted once stale (HELP.md section 43).
+  quote-ttl: PT15M
+  rabbit:
+    # Disabled by default so the service boots and tests run without a broker. The inbound event
+    # logic and the outbox are broker independent; enabling this only attaches the AMQP adapters.
+    enabled: false
+    max-attempts: 5
+  scheduler:
+    enabled: true
+    redemption-expiry-cron: "0 * * * * *"
+    reward-availability-cron: "15 * * * * *"
+    reward-expiry-cron: "30 2 * * * *"
+    outbox-publish-cron: "*/5 * * * * *"
+    batch-size: 200
+
+logging:
+  level:
+    com.lumi.wallet: INFO

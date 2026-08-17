@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    # In-memory Derby: fast, and dropped with the JVM so tests never inherit state from a
+    # previous run. Each test class gets its own database via @DynamicPropertySource where it
+    # needs full isolation.
+    url: jdbc:derby:memory:lumiwallet-test;create=true
+    driver-class-name: org.apache.derby.jdbc.EmbeddedDriver
+    username: app
+    password: app
+    hikari:
+      maximum-pool-size: 10
+      pool-name: wallet-test-pool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: com.lumi.wallet.support.DerbyRowLockingDialect
+        jdbc:
+          time_zone: UTC
+          lob:
+            non_contextual_creation: true
+
+  flyway:
+    enabled: true
+    default-schema: APP
+
+wallet:
+  rabbit:
+    enabled: false
+  scheduler:
+    # Schedulers are driven explicitly from tests instead of firing on a clock.
+    enabled: false
+
+logging:
+  level:
+    com.lumi.wallet: INFO
+    org.hibernate.SQL: WARN
